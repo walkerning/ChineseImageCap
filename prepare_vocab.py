@@ -8,12 +8,13 @@ import random
 import argparse
 from collections import defaultdict
 
+import numpy as np
 import h5py
 import jieba
 import tensorflow as tf
 
 class Vocab(object):
-    def __init__(self, start_word="<S>", end_word="<\S>"):
+    def __init__(self, start_word="<S>", end_word="</S>"):
         self.vocab_dict = {}
         self.vocab_lst = []
         self.occur_dict = {}
@@ -28,7 +29,7 @@ class Vocab(object):
     def dump_to_file(self, fname):
         with open(fname, "w") as f:
             for word in self.vocab_lst:
-                print(word.encode("utf-8"), file=f)
+                print("{} {}".format(word.encode("utf-8"), self.occur_dict[word]), file=f)
             
     def word_to_id(self, word):
         return self.vocab_dict[word]
@@ -46,7 +47,7 @@ class Vocab(object):
             self.last_index += 1
         return self.vocab_dict[word]
 
-def parse_caption_file(fname, vocab, seg_dict):
+def parse_caption_file(fname, vocab, seg_dict, cut):
     indexes = []
     index = None
     with open(fname, "r") as f:
@@ -58,7 +59,10 @@ def parse_caption_file(fname, vocab, seg_dict):
                 index = int(line)
                 indexes.append(index)
             except ValueError:
-                seg_list = list(jieba.cut(line))
+                if cut:
+                    seg_list = list(jieba.cut(line))
+                else:
+                    seg_list = list(line)
                 seg_dict[index].append([vocab.start_id] +
                                        [vocab.add_to_vocab(word) for word in seg_list] +
                                        [vocab.end_id])
@@ -74,7 +78,7 @@ def parse_image_feature_file(fnames):
         if train_set is None:
             train_set, val_set, test_set = dataset["train_set"], dataset["validation_set"], dataset["test_set"]
         else:
-            train_set, val_set, test_set = np.hstack((train_set, dataset["train_set"])), np.hstack((vasl_set, dataset["validation_set"])), np.hstack((test_set, dataset["test_set"])), 
+            train_set, val_set, test_set = np.hstack((train_set, dataset["train_set"])), np.hstack((val_set, dataset["validation_set"])), np.hstack((test_set, dataset["test_set"])), 
     return train_set, val_set, test_set
 
 def _int64_feature(value):
@@ -104,6 +108,7 @@ def dump_tfrecord(indexes, image_features, seg_dict, tfr_dir, num_samples_per_re
     # dump tfrecord files
     print("dump train tfrecords")
     samples = [(ind, image_features[i], seg) for i, ind in enumerate(indexes) for seg in seg_dict[ind]]
+    print("{}: num of samples: {}".format(split, len(samples)))
     random.seed(12345)
     random.shuffle(samples)
     f_idx = 1
@@ -129,6 +134,8 @@ def main():
     parser.add_argument("vocab_file", help="dump vocabulary to file")
     parser.add_argument("tfrecord_dir", help="directory of tfrecord")
     parser.add_argument("--num-samples-per-record", default=400, type=int)
+    parser.add_argument("--vocab-only", default=False, action="store_true")
+    parser.add_argument("--no-cut", default=False, action="store_true")
 
     # TODO: multiple image feature file
     parser.add_argument("-f", "--image-feature-file", action="append", required=True,
@@ -139,18 +146,22 @@ def main():
     vocab = Vocab()
     seg_dict = defaultdict(lambda : [])
     print("parsing caption from train: {}, val: {}".format(args.train_file, args.val_file))
-    train_indexes = parse_caption_file(args.train_file, vocab, seg_dict)
-    val_indexes = parse_caption_file(args.val_file, vocab, seg_dict)
+    train_indexes = parse_caption_file(args.train_file, vocab, seg_dict, not args.no_cut)
+    val_indexes = parse_caption_file(args.val_file, vocab, seg_dict, not args.no_cut)
     print("num train indexes: {}; num val indexes: {}".format(len(train_indexes), len(val_indexes)))
     # dump vocab file
     print("vocabulary size: {}; dump vocabulary to {}".format(vocab.vocab_size, args.vocab_file))
     vocab.dump_to_file(args.vocab_file)
+    if args.vocab_only:
+        return
 
     # load CNN-extracted image features
     print("loading features from {}".format(args.image_feature_file))
     train_features, val_features, _ = parse_image_feature_file(args.image_feature_file)
+    assert len(train_indexes) == train_features.shape[0]
+    assert len(val_indexes) == val_features.shape[0]
 
-    # TODO: test_feature自己读并且喂placeholder吧...就不dump了
+    # TODO: test_feature自己读并且喂placeholder...就不dump了
     dump_tfrecord(train_indexes, train_features, seg_dict, args.tfrecord_dir, args.num_samples_per_record, "train")
     dump_tfrecord(val_indexes, val_features, seg_dict, args.tfrecord_dir, args.num_samples_per_record, "val")
 

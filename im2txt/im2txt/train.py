@@ -18,7 +18,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tensorflow as tf
 
 from im2txt import configuration
@@ -28,15 +30,20 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.flags.DEFINE_string("input_file_pattern", "",
                        "File pattern of sharded TFRecord input files.")
-tf.flags.DEFINE_string("inception_checkpoint_file", "",
-                       "Path to a pretrained inception_v3 model.")
+# tf.flags.DEFINE_string("inception_checkpoint_file", "",
+#                        "Path to a pretrained inception_v3 model.")
 tf.flags.DEFINE_string("train_dir", "",
                        "Directory for saving and loading model checkpoints.")
 tf.flags.DEFINE_boolean("train_inception", False,
                         "Whether to train inception submodel variables.")
-tf.flags.DEFINE_integer("number_of_steps", 1000000, "Number of training steps.")
+#tf.flags.DEFINE_integer("number_of_steps", 1000000, "Number of training steps.")
+tf.flags.DEFINE_integer("number_of_steps", 100000, "Number of training steps.")
 tf.flags.DEFINE_integer("log_every_n_steps", 1,
                         "Frequency at which loss and global step are logged.")
+tf.flags.DEFINE_integer("save_interval_secs", 60,
+                        "Frequency at which checkpoints are saved.")
+tf.app.flags.DEFINE_integer("save_summaries_secs", 10,
+                            "The frequency with which summaries are saved, in seconds.")
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -47,7 +54,7 @@ def main(unused_argv):
 
   model_config = configuration.ModelConfig()
   model_config.input_file_pattern = FLAGS.input_file_pattern
-  model_config.inception_checkpoint_file = FLAGS.inception_checkpoint_file
+  #model_config.inception_checkpoint_file = FLAGS.inception_checkpoint_file
   training_config = configuration.TrainingConfig()
 
   # Create training directory.
@@ -87,7 +94,15 @@ def main(unused_argv):
         learning_rate_decay_fn = _learning_rate_decay_fn
 
     # Set up the training ops.
-    train_op = tf.contrib.layers.optimize_loss(
+    if training_config.optimizer != "SGD":
+      train_op = tf.contrib.layers.optimize_loss(
+        loss=model.total_loss,
+        global_step=model.global_step,
+        learning_rate=learning_rate,
+        optimizer=training_config.optimizer,
+        clip_gradients=training_config.clip_gradients)
+    else:
+      train_op = tf.contrib.layers.optimize_loss(
         loss=model.total_loss,
         global_step=model.global_step,
         learning_rate=learning_rate,
@@ -98,16 +113,26 @@ def main(unused_argv):
     # Set up the Saver for saving and restoring model checkpoints.
     saver = tf.train.Saver(max_to_keep=training_config.max_checkpoints_to_keep)
 
+  # init_fn = None
+  # if FLAGS.init_from_checkpoint:
+  #   def init_fn(sess):
+  #     tf.logging.info("Restore from checkpoint %s", FLAGS.init_from_checkpoint)
+  #     saver.restore(sess, FLAGS.init_from_checkpoint)
+
   # Run training.
   tf.contrib.slim.learning.train(
-      train_op,
-      train_dir,
-      log_every_n_steps=FLAGS.log_every_n_steps,
-      graph=g,
-      global_step=model.global_step,
-      number_of_steps=FLAGS.number_of_steps,
-      init_fn=model.init_fn,
-      saver=saver)
+    train_op,
+    train_dir,
+    log_every_n_steps=FLAGS.log_every_n_steps,
+    graph=g,
+    global_step=model.global_step,
+    number_of_steps=FLAGS.number_of_steps,
+    init_fn=model.init_fn,
+    #init_fn=init_fn,
+    saver=saver,
+    save_interval_secs=FLAGS.save_interval_secs,
+    save_summaries_secs=FLAGS.save_summaries_secs)
+
 
 
 if __name__ == "__main__":

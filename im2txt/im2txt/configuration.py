@@ -41,7 +41,10 @@ class ModelConfig(object):
     self.num_input_reader_threads = 1
 
     # Name of the SequenceExample context feature containing image data.
-    self.image_feature_name = "image/data"
+    #self.image_feature_name = "image/data"
+    self.image_feature_name = "image/feature"
+    #self.image_feature_len = 8192
+    self.image_feature_len = 4096
     # Name of the SequenceExample feature list containing integer captions.
     self.caption_feature_name = "image/caption_ids"
 
@@ -50,7 +53,8 @@ class ModelConfig(object):
     # for differences between tokenizer versions used in preprocessing. There is
     # no harm in using a value greater than the actual vocab size, but using a
     # value less than the actual vocab size will result in an error.
-    self.vocab_size = 12000
+    #self.vocab_size = 12000
+    self.vocab_size = 12212
 
     # Number of threads for image preprocessing. Should be a multiple of 2.
     self.num_preprocess_threads = 4
@@ -84,15 +88,19 @@ class TrainingConfig(object):
   def __init__(self):
     """Sets the default training hyperparameters."""
     # Number of examples per epoch of training data.
-    self.num_examples_per_epoch = 586363
-
+    #self.num_examples_per_epoch = 586363
+    self.num_examples_per_epoch = 38445
+    # val size 4811
     # Optimizer for training the model.
+    #self.optimizer = "Adagrad"
     self.optimizer = "SGD"
 
     # Learning rate for the initial phase of training.
+    #self.initial_learning_rate = 2.0
     self.initial_learning_rate = 2.0
     self.learning_rate_decay_factor = 0.5
-    self.num_epochs_per_decay = 8.0
+    #self.num_epochs_per_decay = 8.0
+    self.num_epochs_per_decay = 4.0
 
     # Learning rate when fine tuning the Inception v3 parameters.
     self.train_inception_learning_rate = 0.0005

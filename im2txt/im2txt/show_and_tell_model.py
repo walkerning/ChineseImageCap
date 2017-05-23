@@ -30,6 +30,7 @@ from im2txt.ops import image_embedding
 from im2txt.ops import image_processing
 from im2txt.ops import inputs as input_ops
 
+slim = tf.contrib.slim
 
 class ShowAndTellModel(object):
   """Image-to-text implementation based on http://arxiv.org/abs/1411.4555.
@@ -129,13 +130,15 @@ class ShowAndTellModel(object):
     """
     if self.mode == "inference":
       # In inference mode, images and inputs are fed via placeholders.
-      image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
+      #image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
+      image_feed = tf.placeholder(dtype=tf.float32, shape=[self.config.image_feature_len], name="image_feed")
       input_feed = tf.placeholder(dtype=tf.int64,
                                   shape=[None],  # batch_size
                                   name="input_feed")
 
       # Process image and insert batch dimensions.
-      images = tf.expand_dims(self.process_image(image_feed), 0)
+      #images = tf.expand_dims(self.process_image(image_feed), 0)
+      images = tf.expand_dims(image_feed, 0)
       input_seqs = tf.expand_dims(input_feed, 1)
 
       # No target sequences or input mask in inference mode.
@@ -158,12 +161,14 @@ class ShowAndTellModel(object):
       images_and_captions = []
       for thread_id in range(self.config.num_preprocess_threads):
         serialized_sequence_example = input_queue.dequeue()
-        encoded_image, caption = input_ops.parse_sequence_example(
+        #encoded_image, caption = input_ops.parse_sequence_example(
+        image_feat, caption = input_ops.parse_sequence_example(
             serialized_sequence_example,
             image_feature=self.config.image_feature_name,
+            image_feature_len=self.config.image_feature_len,
             caption_feature=self.config.caption_feature_name)
-        image = self.process_image(encoded_image, thread_id=thread_id)
-        images_and_captions.append([image, caption])
+        #image = self.process_image(encoded_image, thread_id=thread_id)
+        images_and_captions.append([image_feat, caption])
 
       # Batch inputs.
       queue_capacity = (2 * self.config.num_preprocess_threads *
@@ -187,22 +192,25 @@ class ShowAndTellModel(object):
     Outputs:
       self.image_embeddings
     """
-    inception_output = image_embedding.inception_v3(
-        self.images,
-        trainable=self.train_inception,
-        is_training=self.is_training())
-    self.inception_variables = tf.get_collection(
-        tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
+    # inception_output = image_embedding.inception_v3(
+    #     self.images,
+    #     trainable=self.train_inception,
+    #     is_training=self.is_training())
+    # self.inception_variables = tf.get_collection(
+    #     tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
     # Map inception output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
       image_embeddings = tf.contrib.layers.fully_connected(
-          inputs=inception_output,
-          num_outputs=self.config.embedding_size,
-          activation_fn=None,
-          weights_initializer=self.initializer,
-          biases_initializer=None,
-          scope=scope)
+        #inputs=inception_output,
+        inputs=slim.dropout(self.images,
+                            keep_prob=0.8,
+                            scope="dropout"),
+        num_outputs=self.config.embedding_size,
+        activation_fn=None,
+        weights_initializer=self.initializer,
+        biases_initializer=None,
+        scope=scope)
 
     # Save the embedding size in the graph.
     tf.constant(self.config.embedding_size, name="embedding_size")
@@ -325,18 +333,18 @@ class ShowAndTellModel(object):
       self.target_cross_entropy_losses = losses  # Used in evaluation.
       self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
-  def setup_inception_initializer(self):
-    """Sets up the function to restore inception variables from checkpoint."""
-    if self.mode != "inference":
-      # Restore inception variables only.
-      saver = tf.train.Saver(self.inception_variables)
+  # def setup_inception_initializer(self):
+  #   """Sets up the function to restore inception variables from checkpoint."""
+  #   if self.mode != "inference":
+  #     # Restore inception variables only.
+  #     saver = tf.train.Saver(self.inception_variables)
 
-      def restore_fn(sess):
-        tf.logging.info("Restoring Inception variables from checkpoint file %s",
-                        self.config.inception_checkpoint_file)
-        saver.restore(sess, self.config.inception_checkpoint_file)
+  #     def restore_fn(sess):
+  #       tf.logging.info("Restoring Inception variables from checkpoint file %s",
+  #                       self.config.inception_checkpoint_file)
+  #       saver.restore(sess, self.config.inception_checkpoint_file)
 
-      self.init_fn = restore_fn
+  #     self.init_fn = restore_fn
 
   def setup_global_step(self):
     """Sets up the global step Tensor."""
@@ -354,5 +362,5 @@ class ShowAndTellModel(object):
     self.build_image_embeddings()
     self.build_seq_embeddings()
     self.build_model()
-    self.setup_inception_initializer()
+    #self.setup_inception_initializer()
     self.setup_global_step()
