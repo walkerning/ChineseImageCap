@@ -201,16 +201,27 @@ class ShowAndTellModel(object):
 
     # Map inception output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
-      image_embeddings = tf.contrib.layers.fully_connected(
-        #inputs=inception_output,
-        inputs=slim.dropout(self.images,
-                            keep_prob=0.8,
-                            scope="dropout"),
-        num_outputs=self.config.embedding_size,
-        activation_fn=None,
-        weights_initializer=self.initializer,
-        biases_initializer=None,
-        scope=scope)
+      if self.config.dropout_image_feature is not None:
+        print("use dropout ratio {} on image features".format(self.config.dropout_image_feature))
+        image_embeddings = tf.contrib.layers.fully_connected(
+          #inputs=inception_output,
+          inputs=slim.dropout(self.images,
+                              keep_prob=self.config.dropout_image_feature,
+                              scope="dropout"),
+          num_outputs=self.config.embedding_size,
+          activation_fn=None,
+          weights_initializer=self.initializer,
+          biases_initializer=None,
+          scope=scope)
+      else:
+        print("do not use dropout on image features")
+        image_embeddings = tf.contrib.layers.fully_connected(
+          inputs=self.images,
+          num_outputs=self.config.embedding_size,
+          activation_fn=None,
+          weights_initializer=self.initializer,
+          biases_initializer=None,
+          scope=scope)        
 
     # Save the embedding size in the graph.
     tf.constant(self.config.embedding_size, name="embedding_size")

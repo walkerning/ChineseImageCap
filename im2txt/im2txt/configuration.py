@@ -43,8 +43,8 @@ class ModelConfig(object):
     # Name of the SequenceExample context feature containing image data.
     #self.image_feature_name = "image/data"
     self.image_feature_name = "image/feature"
-    #self.image_feature_len = 8192
-    self.image_feature_len = 4096
+    self.image_feature_len = 8192
+    #self.image_feature_len = 4096
     # Name of the SequenceExample feature list containing integer captions.
     self.caption_feature_name = "image/caption_ids"
 
@@ -78,6 +78,8 @@ class ModelConfig(object):
     self.embedding_size = 512
     self.num_lstm_units = 512
 
+    self.dropout_image_feature = None
+    #self.dropout_image_feature = 0.8
     # If < 1.0, the dropout keep probability applied to LSTM variables.
     self.lstm_dropout_keep_prob = 0.7
 
@@ -99,8 +101,8 @@ class TrainingConfig(object):
     #self.initial_learning_rate = 2.0
     self.initial_learning_rate = 2.0
     self.learning_rate_decay_factor = 0.5
-    #self.num_epochs_per_decay = 8.0
-    self.num_epochs_per_decay = 4.0
+    self.num_epochs_per_decay = 8.0
+    #self.num_epochs_per_decay = 4.0
 
     # Learning rate when fine tuning the Inception v3 parameters.
     self.train_inception_learning_rate = 0.0005
