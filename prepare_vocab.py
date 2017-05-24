@@ -62,7 +62,7 @@ def parse_caption_file(fname, vocab, seg_dict, cut):
                 if cut:
                     seg_list = list(jieba.cut(line))
                 else:
-                    seg_list = list(line)
+                    seg_list = list(line.decode("utf-8"))
                 seg_dict[index].append([vocab.start_id] +
                                        [vocab.add_to_vocab(word) for word in seg_list] +
                                        [vocab.end_id])
