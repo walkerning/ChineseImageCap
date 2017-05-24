@@ -48,6 +48,7 @@ tf.flags.DEFINE_string("feature_files", "",
                        "of image files.")
 tf.flags.DEFINE_string("test_index_file", "", "a txt test index file")
 
+tf.flags.DEFINE_string("write_top_res_file", None, "write top1 caption to file")
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -85,9 +86,16 @@ def main(_):
     # beam search parameters. See caption_generator.py for a description of the
     # available beam search parameters.
     generator = caption_generator.CaptionGenerator(model, vocab)
+    
+    write_res_f = None
+    if FLAGS.write_top_res_file is not None:
+      write_res_f = open(FLAGS.write_top_res_file, "w")
 
     for ind, feature in zip(test_inds, test_features):
       captions = generator.beam_search(sess, feature)
+      if write_res_f is not None:
+        sentence = [vocab.id_to_word(w) for w in captions[0].sentence[1:-1]]
+        print(" ".join(sentence), file=write_res_f)
       print("Captions for test image feature %d:" % ind)
       for i, caption in enumerate(captions):
         # Ignore begin and end words.

@@ -46,7 +46,9 @@ class Vocabulary(object):
 
     with tf.gfile.GFile(vocab_file, mode="r") as f:
       reverse_vocab = list(f.readlines())
-    reverse_vocab = [line.split()[0] for line in reverse_vocab]
+    reverse_vocab, self.occur_time = zip(*[line.split()[:2] for line in reverse_vocab])
+    reverse_vocab = list(reverse_vocab)
+    self.occur_time = [int(occur_time) for occur_time in self.occur_time]
     assert start_word in reverse_vocab
     assert end_word in reverse_vocab
     if unk_word not in reverse_vocab:
