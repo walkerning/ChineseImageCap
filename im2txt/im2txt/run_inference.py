@@ -49,6 +49,7 @@ tf.flags.DEFINE_string("feature_files", "",
 tf.flags.DEFINE_string("test_index_file", "", "a txt test index file")
 
 tf.flags.DEFINE_string("write_top_res_file", None, "write top1 caption to file")
+tf.flags.DEFINE_boolean("verbose", False, "print information or not")
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -91,17 +92,19 @@ def main(_):
     if FLAGS.write_top_res_file is not None:
       write_res_f = open(FLAGS.write_top_res_file, "w")
 
-    for ind, feature in zip(test_inds, test_features):
+    print_info_iter = 50
+    for itern, (ind, feature) in enumerate(zip(test_inds, test_features)):
       captions = generator.beam_search(sess, feature)
       if write_res_f is not None:
         sentence = [vocab.id_to_word(w) for w in captions[0].sentence[1:-1]]
         print(" ".join(sentence), file=write_res_f)
-      print("Captions for test image feature %d:" % ind)
-      for i, caption in enumerate(captions):
-        # Ignore begin and end words.
-        sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
-        sentence = " ".join(sentence)
-        print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
+      if FLAGS.verbose or itern % print_info_iter == 0:
+        print("Iter %d: Captions for test image feature %d:" % (itern, ind))
+        for i, caption in enumerate(captions):
+          # Ignore begin and end words.
+          sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
+          sentence = " ".join(sentence)
+          print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
 
 
 if __name__ == "__main__":
