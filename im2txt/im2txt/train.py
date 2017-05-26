@@ -42,9 +42,10 @@ tf.flags.DEFINE_integer("log_every_n_steps", 1,
                         "Frequency at which loss and global step are logged.")
 tf.flags.DEFINE_integer("save_interval_secs", 60,
                         "Frequency at which checkpoints are saved.")
-tf.app.flags.DEFINE_integer("save_summaries_secs", 10,
-                            "The frequency with which summaries are saved, in seconds.")
-
+tf.flags.DEFINE_integer("save_summaries_secs", 10,
+                        "The frequency with which summaries are saved, in seconds.")
+tf.flags.DEFINE_string("init_from_checkpoint", "",
+                       "finetune from a checkpoint")
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -110,15 +111,16 @@ def main(unused_argv):
         clip_gradients=training_config.clip_gradients,
         learning_rate_decay_fn=learning_rate_decay_fn)
 
+    init_saver = tf.train.Saver(set(tf.global_variables()).difference({model.global_step}))
     # Set up the Saver for saving and restoring model checkpoints.
     saver = tf.train.Saver(max_to_keep=training_config.max_checkpoints_to_keep)
 
-  # init_fn = None
-  # if FLAGS.init_from_checkpoint:
-  #   def init_fn(sess):
-  #     tf.logging.info("Restore from checkpoint %s", FLAGS.init_from_checkpoint)
-  #     saver.restore(sess, FLAGS.init_from_checkpoint)
-
+  init_fn = None
+  if FLAGS.init_from_checkpoint:
+    def init_fn(sess):
+      tf.logging.info("Restore from checkpoint %s", FLAGS.init_from_checkpoint)
+      init_saver.restore(sess, FLAGS.init_from_checkpoint)
+      
   # Run training.
   tf.contrib.slim.learning.train(
     train_op,
@@ -127,8 +129,8 @@ def main(unused_argv):
     graph=g,
     global_step=model.global_step,
     number_of_steps=FLAGS.number_of_steps,
-    init_fn=model.init_fn,
-    #init_fn=init_fn,
+    #init_fn=model.init_fn,
+    init_fn=init_fn,
     saver=saver,
     save_interval_secs=FLAGS.save_interval_secs,
     save_summaries_secs=FLAGS.save_summaries_secs)
