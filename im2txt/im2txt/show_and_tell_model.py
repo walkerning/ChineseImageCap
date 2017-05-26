@@ -323,19 +323,18 @@ class ShowAndTellModel(object):
       else:
         # Run the batch of sequence embeddings through the LSTM.
         sequence_length = tf.reduce_sum(self.input_mask, 1)
-        lstm_outputs, _ = tf.nn.dynamic_rnn(cell=lstm_cell,
-                                            inputs=self.seq_embeddings,
-                                            sequence_length=sequence_length,
-                                            initial_state=initial_state,
-                                            dtype=tf.float32,
-                                            scope=lstm_scope)
+        d_lstm_outputs, _ = tf.nn.dynamic_rnn(cell=lstm_cell,
+                                              inputs=self.seq_embeddings,
+                                              sequence_length=sequence_length,
+                                              initial_state=initial_state,
+                                              dtype=tf.float32,
+                                              scope=lstm_scope)
         if self.config.use_scheduled_sampling:
           start_pad = tf.zeros([self.config.batch_size], dtype=tf.int32)
           start_pad_embeded = tf.nn.embedding_lookup(self.embedding_map, start_pad)
           def loop_fn_initial():
             initial_elements_finished = (0 >= sequence_length)  # all False at the initial step
-            #initial_input = start_pad_embeded
-            initial_input = self.seq_embeddings[:, 0]
+            initial_input = start_pad_embeded
             initial_cell_state = initial_state
             initial_cell_output = None
             initial_loop_state = None  # we don't need to pass any additional information
@@ -355,6 +354,10 @@ class ShowAndTellModel(object):
                                                           # defining if corresponding sequence has ended
             finished = tf.reduce_all(elements_finished) # -> boolean scalar
             input = tf.cond(finished, lambda: start_pad_embeded, get_next_input)
+            #use_gt_input = tf.logical_and(time >= 4, tf.reduce_all(time < sequence_length))
+            #true_input = tf.cond(use_gt_input, lambda: self.seq_embeddings[:, time], lambda: input)
+            # this start_pad_embed seems unnecessary from the implementation of `raw_rnn`
+            # just set the elements_finished right!
             state = previous_state
             output = previous_output
             loop_state = None
@@ -366,7 +369,7 @@ class ShowAndTellModel(object):
                     loop_state)
 
           def loop_fn(time, previous_output, previous_state, previous_loop_state):
-            if previous_state is None:    # time == 0
+            if previous_state is None: # first step
               assert previous_output is None and previous_state is None
               return loop_fn_initial()
             else:
@@ -377,7 +380,9 @@ class ShowAndTellModel(object):
           
           select_sample_noise = random_ops.random_uniform(shape=(1,))
           select_schedule_sample = (self.not_schedule_sample_prob < select_sample_noise)[0]
-          lstm_outputs = tf.cond(select_schedule_sample, lambda: schedule_sampled, lambda: lstm_outputs)
+          lstm_outputs = tf.cond(select_schedule_sample, lambda: schedule_sampled, lambda: d_lstm_outputs)
+        else:
+          lstm_outputs = d_lstm_outputs
  
     # Stack batches vertically.
     lstm_outputs = tf.reshape(lstm_outputs, [-1, lstm_cell.output_size])
@@ -407,7 +412,8 @@ class ShowAndTellModel(object):
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
-      tf.summary.scalar("scheduled_sampling/use", tf.cast(select_schedule_sample, tf.int8))
+      if self.config.use_scheduled_sampling:
+        tf.summary.scalar("scheduled_sampling/use", tf.cast(select_schedule_sample, tf.int8))
       tf.summary.scalar("losses/batch_loss", batch_loss)
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():

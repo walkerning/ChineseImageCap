@@ -83,7 +83,7 @@ class ModelConfig(object):
     # If < 1.0, the dropout keep probability applied to LSTM variables.
     self.lstm_dropout_keep_prob = 0.7
 
-    self.use_scheduled_sampling = True
+    self.use_scheduled_sampling = False
 
     self.initial_schedule_sample_ratio = 1.
     self.schedule_sample_decay_factor = 0.6
