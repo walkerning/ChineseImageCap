@@ -25,12 +25,26 @@ from __future__ import print_function
 
 
 import tensorflow as tf
+from tensorflow.python.ops import random_ops
 
 from im2txt.ops import image_embedding
 from im2txt.ops import image_processing
 from im2txt.ops import inputs as input_ops
 
 slim = tf.contrib.slim
+
+def lstm_output_to_logits(lstm_outputs, vocab_size, output_size, initializer, w_name, b_name):
+  # logits_W = tf.get_variable(w_name, shape=[output_size, vocab_size], initializer=initializer, dtype=tf.float32)
+  # logits_b = tf.get_variable(b_name, shape=[vocab_size], initializer=initializer, dtype=tf.float32)
+  # logits = tf.matmul(lstm_outputs, logits_W) + logits_b
+  with tf.variable_scope("logits") as logits_scope:
+    logits = tf.contrib.layers.fully_connected(
+      inputs=lstm_outputs,
+      num_outputs=vocab_size,
+      activation_fn=None,
+      weights_initializer=initializer,
+      scope=logits_scope)
+  return logits
 
 class ShowAndTellModel(object):
   """Image-to-text implementation based on http://arxiv.org/abs/1411.4555.
@@ -39,7 +53,7 @@ class ShowAndTellModel(object):
   Oriol Vinyals, Alexander Toshev, Samy Bengio, Dumitru Erhan
   """
 
-  def __init__(self, config, mode, train_inception=False):
+  def __init__(self, config, training_config, mode, train_inception=False):
     """Basic setup.
 
     Args:
@@ -49,6 +63,7 @@ class ShowAndTellModel(object):
     """
     assert mode in ["train", "eval", "inference"]
     self.config = config
+    self.training_config = training_config
     self.mode = mode
     self.train_inception = train_inception
 
@@ -75,6 +90,8 @@ class ShowAndTellModel(object):
 
     # A float32 Tensor with shape [batch_size, embedding_size].
     self.image_embeddings = None
+
+    self.embedding_map = None
 
     # A float32 Tensor with shape [batch_size, padded_length, embedding_size].
     self.seq_embeddings = None
@@ -243,7 +260,7 @@ class ShowAndTellModel(object):
           shape=[self.config.vocab_size, self.config.embedding_size],
           initializer=self.initializer)
       seq_embeddings = tf.nn.embedding_lookup(embedding_map, self.input_seqs)
-
+    self.embedding_map = embedding_map
     self.seq_embeddings = seq_embeddings
 
   def build_model(self):
@@ -264,12 +281,17 @@ class ShowAndTellModel(object):
     # modified LSTM in the "Show and Tell" paper has no biases and outputs
     # new_c * sigmoid(o).
     lstm_cell = tf.contrib.rnn.BasicLSTMCell(
-        num_units=self.config.num_lstm_units, state_is_tuple=True)
+        num_units=self.config.num_lstm_units, state_is_tuple=True, reuse=tf.get_variable_scope().reuse)
     if self.mode == "train":
       lstm_cell = tf.contrib.rnn.DropoutWrapper(
           lstm_cell,
           input_keep_prob=self.config.lstm_dropout_keep_prob,
           output_keep_prob=self.config.lstm_dropout_keep_prob)
+
+    get_logits = tf.make_template("get_logits", lstm_output_to_logits, vocab_size=self.config.vocab_size, initializer=self.initializer, output_size=self.config.num_lstm_units, w_name="logits_W", b_name="logits_b")
+    # call logits outside of `lstm` variable scope for one time...
+    # or when in the `lstm` scope... after calling lstm_scope.reuse_variables()... the first time calling get_logits. it will report NonExist error when `get_variable()`
+    _ = get_logits(tf.zeros(dtype=tf.float32, shape=[1, self.config.num_lstm_units]))
 
     with tf.variable_scope("lstm", initializer=self.initializer) as lstm_scope:
       # Feed the image embeddings to set the initial LSTM state.
@@ -307,17 +329,66 @@ class ShowAndTellModel(object):
                                             initial_state=initial_state,
                                             dtype=tf.float32,
                                             scope=lstm_scope)
+        if self.config.use_scheduled_sampling:
+          start_pad = tf.zeros([self.config.batch_size], dtype=tf.int32)
+          start_pad_embeded = tf.nn.embedding_lookup(self.embedding_map, start_pad)
+          def loop_fn_initial():
+            initial_elements_finished = (0 >= sequence_length)  # all False at the initial step
+            initial_input = start_pad_embeded
+            initial_cell_state = initial_state
+            initial_cell_output = None
+            initial_loop_state = None  # we don't need to pass any additional information
+            return (initial_elements_finished,
+                    initial_input,
+                    initial_cell_state,
+                    initial_cell_output,
+                    initial_loop_state)
+          def loop_fn_transition(time, previous_output, previous_state, previous_loop_state):
+            def get_next_input():
+              output_logits = get_logits(previous_output)
+              prediction = tf.argmax(output_logits, axis=1)
+              next_input = tf.nn.embedding_lookup(self.embedding_map, prediction)
+              return next_input
+            
+            elements_finished = (time >= sequence_length) # this operation produces boolean tensor of [batch_size]
+                                                          # defining if corresponding sequence has ended
+            finished = tf.reduce_all(elements_finished) # -> boolean scalar
+            input = tf.cond(finished, lambda: start_pad_embeded, get_next_input)
+            state = previous_state
+            output = previous_output
+            loop_state = None
+        
+            return (elements_finished, 
+                    input,
+                    state,
+                    output,
+                    loop_state)
 
+          def loop_fn(time, previous_output, previous_state, previous_loop_state):
+            if previous_state is None:    # time == 0
+              assert previous_output is None and previous_state is None
+              return loop_fn_initial()
+            else:
+              return loop_fn_transition(time, previous_output, previous_state, previous_loop_state)
+        
+          decoder_outputs_ta, decoder_final_state, _ = tf.nn.raw_rnn(lstm_cell, loop_fn)
+          schedule_sampled = decoder_outputs_ta.stack()
+          
+          select_sample_noise = random_ops.random_uniform(shape=(1,))
+          select_schedule_sample = (self.not_schedule_sample_prob < select_sample_noise)[0]
+          lstm_outputs = tf.cond(select_schedule_sample, lambda: schedule_sampled, lambda: lstm_outputs)
+ 
     # Stack batches vertically.
     lstm_outputs = tf.reshape(lstm_outputs, [-1, lstm_cell.output_size])
-
-    with tf.variable_scope("logits") as logits_scope:
-      logits = tf.contrib.layers.fully_connected(
-          inputs=lstm_outputs,
-          num_outputs=self.config.vocab_size,
-          activation_fn=None,
-          weights_initializer=self.initializer,
-          scope=logits_scope)
+    logits = get_logits(lstm_outputs)
+    # logits = lstm_outputs * logits_W + logits_b
+    # with tf.variable_scope("logits") as logits_scope:
+    #   logits = tf.contrib.layers.fully_connected(
+    #       inputs=lstm_outputs,
+    #       num_outputs=self.config.vocab_size,
+    #       activation_fn=None,
+    #       weights_initializer=self.initializer,
+    #       scope=logits_scope)
 
     if self.mode == "inference":
       tf.nn.softmax(logits, name="softmax")
@@ -335,6 +406,7 @@ class ShowAndTellModel(object):
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
+      tf.summary.scalar("scheduled_sampling/use", tf.cast(select_schedule_sample, tf.int8))
       tf.summary.scalar("losses/batch_loss", batch_loss)
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
@@ -367,11 +439,19 @@ class ShowAndTellModel(object):
 
     self.global_step = global_step
 
+  def setup_schedule_sample(self):
+    if self.config.use_scheduled_sampling and self.mode == "train":
+      num_batches_per_epoch = (self.training_config.num_examples_per_epoch /
+                             self.config.batch_size)
+      self.not_schedule_sample_prob = tf.train.exponential_decay(self.config.initial_schedule_sample_ratio, self.global_step, self.config.num_epochs_per_schedule_decay * num_batches_per_epoch, self.config.schedule_sample_decay_factor)
+    
   def build(self):
     """Creates all ops for training and evaluation."""
+    self.setup_global_step()
+    self.setup_schedule_sample()
     self.build_inputs()
     self.build_image_embeddings()
     self.build_seq_embeddings()
     self.build_model()
     #self.setup_inception_initializer()
-    self.setup_global_step()
+  

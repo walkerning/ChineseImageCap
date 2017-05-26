@@ -32,7 +32,7 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
     super(InferenceWrapper, self).__init__()
 
   def build_model(self, model_config):
-    model = show_and_tell_model.ShowAndTellModel(model_config, mode="inference")
+    model = show_and_tell_model.ShowAndTellModel(model_config, None, mode="inference")
     model.build()
     return model
 

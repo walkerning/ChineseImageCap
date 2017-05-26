@@ -69,7 +69,8 @@ def main(unused_argv):
   with g.as_default():
     # Build the model.
     model = show_and_tell_model.ShowAndTellModel(
-        model_config, mode="train", train_inception=FLAGS.train_inception)
+        model_config, training_config, mode="train", train_inception=FLAGS.train_inception)
+
     model.build()
 
     # Set up the learning rate.
@@ -111,6 +112,7 @@ def main(unused_argv):
         clip_gradients=training_config.clip_gradients,
         learning_rate_decay_fn=learning_rate_decay_fn)
 
+    # Create saver in the same graph as all the variables. https://stackoverflow.com/questions/36281129/no-variable-to-save-error-in-tensorflow
     init_saver = tf.train.Saver(set(tf.global_variables()).difference({model.global_step}))
     # Set up the Saver for saving and restoring model checkpoints.
     saver = tf.train.Saver(max_to_keep=training_config.max_checkpoints_to_keep)
