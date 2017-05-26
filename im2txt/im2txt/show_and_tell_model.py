@@ -334,7 +334,8 @@ class ShowAndTellModel(object):
           start_pad_embeded = tf.nn.embedding_lookup(self.embedding_map, start_pad)
           def loop_fn_initial():
             initial_elements_finished = (0 >= sequence_length)  # all False at the initial step
-            initial_input = start_pad_embeded
+            #initial_input = start_pad_embeded
+            initial_input = self.seq_embeddings[:, 0]
             initial_cell_state = initial_state
             initial_cell_output = None
             initial_loop_state = None  # we don't need to pass any additional information
