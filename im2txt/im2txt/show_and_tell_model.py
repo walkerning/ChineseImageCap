@@ -23,7 +23,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
+import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import random_ops
 
@@ -255,10 +255,31 @@ class ShowAndTellModel(object):
       self.seq_embeddings
     """
     with tf.variable_scope("seq_embedding"), tf.device("/cpu:0"):
-      embedding_map = tf.get_variable(
+      if self.config.use_pretrained_embedding:
+        pretrained_emb = np.fromfile(self.config.use_pretrained_embedding, dtype=np.float32).reshape([self.config.vocab_size, self.config.pretrained_embedding_size])
+        embedding_map = tf.get_variable(
+          name="map",
+          initializer=pretrained_emb,
+          trainable=self.config.train_embedding)
+        if not self.config.pretrained_embedding_size == self.config.embedding_size:
+          w = tf.get_variable(
+            name="embedding_map_{}_to_{}".format(self.config.pretrained_embedding_size, self.config.embedding_size),
+            shape=[self.config.pretrained_embedding_size, self.config.embedding_size],
+            initializer=self.initializer
+          )
+          b = tf.get_variable(
+            name="embedding_bias",
+            shape=[self.config.embedding_size],
+            initializer=self.initializer
+          )
+          embedding_map = tf.matmul(embedding_map, w) + b
+      else:
+        embedding_map = tf.get_variable(
           name="map",
           shape=[self.config.vocab_size, self.config.embedding_size],
           initializer=self.initializer)
+
+
       seq_embeddings = tf.nn.embedding_lookup(embedding_map, self.input_seqs)
     self.embedding_map = embedding_map
     self.seq_embeddings = seq_embeddings

@@ -54,7 +54,8 @@ class ModelConfig(object):
     # no harm in using a value greater than the actual vocab size, but using a
     # value less than the actual vocab size will result in an error.
     #self.vocab_size = 12000
-    self.vocab_size = 12212
+    #self.vocab_size = 12212
+    self.vocab_size = 2618 # cut
 
     # Number of threads for image preprocessing. Should be a multiple of 2.
     self.num_preprocess_threads = 4
@@ -89,6 +90,9 @@ class ModelConfig(object):
     self.schedule_sample_decay_factor = 0.6
     self.num_epochs_per_schedule_decay = 24.
 
+    self.use_pretrained_embedding = "./embedding/zh.npz"
+    self.pretrained_embedding_size = 300
+    self.train_embedding = True
 
 class TrainingConfig(object):
   """Wrapper class for training hyperparameters."""
